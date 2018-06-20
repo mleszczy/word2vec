@@ -18,7 +18,7 @@
 #include <math.h>
 #include <pthread.h>
 
-#define MAX_STRING 100
+#define MAX_STRING 10000
 #define EXP_TABLE_SIZE 1000
 #define MAX_EXP 6
 #define MAX_SENTENCE_LENGTH 1000
@@ -44,6 +44,9 @@ long long train_words = 0, word_count_actual = 0, iter = 5, file_size = 0, class
 real alpha = 0.025, starting_alpha, sample = 1e-3;
 real *syn0, *syn1, *syn1neg, *expTable;
 clock_t start;
+int seed;
+int checkpoint_interval = 0;
+int last_checkpoint = 0;
 
 int hs = 0, negative = 5;
 const int table_size = 1e8;
@@ -307,6 +310,28 @@ void LearnVocabFromTrainFile() {
   fclose(fin);
 }
 
+void SaveVectors(int iters) {
+  char output_file_full[MAX_STRING];
+  long a, b;
+  FILE* fo;
+  if (iters > 0){
+    sprintf(output_file_full,"%s.%d.txt", output_file, iters);
+  }
+  else {
+    sprintf(output_file_full,"%s.txt", output_file);
+  }
+  fo = fopen(output_file_full, "wb");
+  // Save the word vectors
+  fprintf(fo, "%lld %lld\n", vocab_size, layer1_size);
+  for (a = 0; a < vocab_size; a++) {
+    fprintf(fo, "%s ", vocab[a].word);
+    if (binary) for (b = 0; b < layer1_size; b++) fwrite(&syn0[a * layer1_size + b], sizeof(real), 1, fo);
+    else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", syn0[a * layer1_size + b]);
+    fprintf(fo, "\n");
+  }
+  fclose(fo);
+}
+
 void SaveVocab() {
   long long i;
   FILE *fo = fopen(save_vocab_file, "wb");
@@ -349,7 +374,7 @@ void ReadVocab() {
 
 void InitNet() {
   long long a, b;
-  unsigned long long next_random = 1;
+  unsigned long long next_random = seed;
   a = posix_memalign((void **)&syn0, 128, (long long)vocab_size * layer1_size * sizeof(real));
   if (syn0 == NULL) {printf("Memory allocation failed\n"); exit(1);}
   if (hs) {
@@ -420,6 +445,12 @@ void *TrainModelThread(void *id) {
       word_count_actual += word_count - last_word_count;
       local_iter--;
       if (local_iter == 0) break;
+      if (((iter - local_iter) - last_checkpoint) == checkpoint_interval
+        && (checkpoint_interval > 0)
+        && (id == 0)) {
+        SaveVectors(iter-local_iter);
+        last_checkpoint = iter-local_iter;
+      }
       word_count = 0;
       last_word_count = 0;
       sentence_length = 0;
@@ -568,17 +599,10 @@ void TrainModel() {
   start = clock();
   for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
   for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
-  fo = fopen(output_file, "wb");
   if (classes == 0) {
-    // Save the word vectors
-    fprintf(fo, "%lld %lld\n", vocab_size, layer1_size);
-    for (a = 0; a < vocab_size; a++) {
-      fprintf(fo, "%s ", vocab[a].word);
-      if (binary) for (b = 0; b < layer1_size; b++) fwrite(&syn0[a * layer1_size + b], sizeof(real), 1, fo);
-      else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", syn0[a * layer1_size + b]);
-      fprintf(fo, "\n");
-    }
+    SaveVectors(0);
   } else {
+    fo = fopen(output_file, "wb");
     // Run K-means on the word vectors
     int clcn = classes, iter = 10, closeid;
     int *centcn = (int *)malloc(classes * sizeof(int));
@@ -621,8 +645,8 @@ void TrainModel() {
     free(centcn);
     free(cent);
     free(cl);
+    fclose(fo);
   }
-  fclose(fo);
 }
 
 int ArgPos(char *str, int argc, char **argv) {
@@ -678,6 +702,10 @@ int main(int argc, char **argv) {
     printf("\t\tThe vocabulary will be read from <file>, not constructed from the training data\n");
     printf("\t-cbow <int>\n");
     printf("\t\tUse the continuous bag of words model; default is 1 (use 0 for skip-gram model)\n");
+    printf("\t-seed <int>\n");
+    printf("\t\tSeed for embedding initialization\n");
+    printf("\t-checkpoint_interval <int>\n");
+    printf("\t\tCheckpoint interval; default is 0\n");
     printf("\nExamples:\n");
     printf("./word2vec -train data.txt -output vec.txt -size 200 -window 5 -sample 1e-4 -negative 5 -hs 0 -binary 0 -cbow 1 -iter 3\n\n");
     return 0;
@@ -703,6 +731,8 @@ int main(int argc, char **argv) {
   if ((i = ArgPos((char *)"-iter", argc, argv)) > 0) iter = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-min-count", argc, argv)) > 0) min_count = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-classes", argc, argv)) > 0) classes = atoi(argv[i + 1]);
+  if ((i = ArgPos((char *)"-seed", argc, argv)) > 0) seed = atoi(argv[i + 1]);
+  if ((i = ArgPos((char *)"-checkpoint_interval", argc, argv)) > 0) checkpoint_interval = atoi(argv[i + 1]);
   vocab = (struct vocab_word *)calloc(vocab_max_size, sizeof(struct vocab_word));
   vocab_hash = (int *)calloc(vocab_hash_size, sizeof(int));
   expTable = (real *)malloc((EXP_TABLE_SIZE + 1) * sizeof(real));
