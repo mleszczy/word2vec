@@ -310,16 +310,11 @@ void LearnVocabFromTrainFile() {
   fclose(fin);
 }
 
-void SaveVectors(int iters) {
+void SaveVectors(int iter) {
   char output_file_full[MAX_STRING];
   long a, b;
   FILE* fo;
-  if (iters > 0){
-    sprintf(output_file_full,"%s.%d.txt", output_file, iters);
-  }
-  else {
-    sprintf(output_file_full,"%s.txt", output_file);
-  }
+  sprintf(output_file_full,"%s.%d.txt", output_file, iter);
   fo = fopen(output_file_full, "wb");
   // Save the word vectors
   fprintf(fo, "%lld %lld\n", vocab_size, layer1_size);
@@ -600,7 +595,7 @@ void TrainModel() {
   for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
   for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
   if (classes == 0) {
-    SaveVectors(0);
+    SaveVectors(iter);
   } else {
     fo = fopen(output_file, "wb");
     // Run K-means on the word vectors
