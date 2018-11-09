@@ -34,7 +34,9 @@ struct vocab_word {
   char *word, *code, codelen;
 };
 
-char train_file[MAX_STRING], output_file[MAX_STRING];
+char train_file[MAX_STRING];
+char output_file[MAX_STRING];
+
 char save_vocab_file[MAX_STRING], read_vocab_file[MAX_STRING];
 struct vocab_word *vocab;
 int binary = 0, cbow = 1, debug_mode = 2, window = 5, min_count = 5, num_threads = 12, min_reduce = 1;
@@ -311,20 +313,35 @@ void LearnVocabFromTrainFile() {
 }
 
 void SaveVectors(int iter) {
-  char output_file_full[MAX_STRING];
+  char output_word_vector_file_full[MAX_STRING];
+  char output_context_vector_file_full[MAX_STRING];
   long a, b;
-  FILE* fo;
-  sprintf(output_file_full,"%s.%d.txt", output_file, iter);
-  fo = fopen(output_file_full, "wb");
+  FILE* fo1;
+  FILE* fo2;
+  sprintf(output_word_vector_file_full,"%s.%d.w.txt", output_file, iter);
+  sprintf(output_context_vector_file_full,"%s.%d.c.txt", output_file, iter);
+  fo1 = fopen(output_word_vector_file_full, "wb");
+  fo2 = fopen(output_context_vector_file_full, "wb");
   // Save the word vectors
-  fprintf(fo, "%lld %lld\n", vocab_size, layer1_size);
+  fprintf(fo1, "%lld %lld\n", vocab_size, layer1_size);
+  fprintf(fo2, "%lld %lld\n", vocab_size, layer1_size);
   for (a = 0; a < vocab_size; a++) {
-    fprintf(fo, "%s ", vocab[a].word);
-    if (binary) for (b = 0; b < layer1_size; b++) fwrite(&syn0[a * layer1_size + b], sizeof(real), 1, fo);
-    else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", syn0[a * layer1_size + b]);
-    fprintf(fo, "\n");
+    fprintf(fo1, "%s ", vocab[a].word);
+    fprintf(fo2, "%s ", vocab[a].word);
+    if (binary) for (b = 0; b < layer1_size; b++) {
+      fwrite(&syn0[a * layer1_size + b], sizeof(real), 1, fo1);
+      fwrite(&syn1neg[a * layer1_size + b], sizeof(real), 1, fo2);
+    } else {
+      for (b = 0; b < layer1_size; b++) {
+        fprintf(fo1, "%lf ", syn0[a * layer1_size + b]);
+        fprintf(fo2, "%lf ", syn1neg[a * layer1_size + b]);
+      }
+    }
+    fprintf(fo1, "\n");
+    fprintf(fo2, "\n");
   }
-  fclose(fo);
+  fclose(fo1);
+  fclose(fo2);
 }
 
 void SaveVocab() {
