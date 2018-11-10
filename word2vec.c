@@ -38,6 +38,7 @@ char train_file[MAX_STRING];
 char output_file[MAX_STRING];
 
 char save_vocab_file[MAX_STRING], read_vocab_file[MAX_STRING];
+char init_word_file[MAX_STRING], init_context_file[MAX_STRING];
 struct vocab_word *vocab;
 int binary = 0, cbow = 1, debug_mode = 2, window = 5, min_count = 5, num_threads = 12, min_reduce = 1;
 int *vocab_hash;
@@ -116,6 +117,77 @@ int SearchVocab(char *word) {
     hash = (hash + 1) % vocab_hash_size;
   }
   return -1;
+}
+
+// Reads a single word from a file, assuming space + tab + EOL to be word boundaries
+void InitVector() {
+  FILE* fi = fopen(init_word_file, "rb");
+  if (fi == NULL) return;
+
+  int n = 0;
+  int ch = 0;
+  while(!feof(fi)) {
+    ch = fgetc(fi);
+    if(ch == '\n') n++;
+  }
+  fclose(fi);
+
+  printf("Total word in file: %d\n", n);
+
+  // Load word vectors
+  FILE* fi1 = fopen(init_word_file, "rb");
+
+  // Skips the header of input file
+  while(!feof(fi)) {
+    ch = fgetc(fi);
+    if(ch == '\n') break;
+  }
+  int cnt = 1;
+  while(!feof(fi1) && cnt < n) {
+    char word[MAX_STRING], eof_l = 0;
+    real *vec = (real *)calloc(layer1_size, sizeof(real));
+    ReadWord(word, fi1, &eof_l);
+    for (int a = 0; a < layer1_size; a++)
+      fscanf(fi1, "%f", &vec[a]);
+    // Ignore the tailing chars
+    while(!feof(fi)) {
+      ch = fgetc(fi);
+      if(ch == '\n') break;
+    }
+    int idx = SearchVocab(word);
+    if (idx >= 0) {
+      memcpy(&(syn0[idx * layer1_size]), vec, layer1_size * sizeof(real));
+    }
+    cnt++;
+  }
+  fclose(fi1);
+
+  // Load context vectors
+  FILE* fi2 = fopen(init_context_file, "rb");
+
+  // Skips the header of input file
+  while(!feof(fi)) {
+    ch = fgetc(fi);
+    if(ch == '\n') break;
+  }
+  cnt = 1;
+  while(!feof(fi1) && cnt < n) {
+    char word[MAX_STRING], eof_l = 0;
+    real *vec = (real *)calloc(layer1_size, sizeof(real));
+    ReadWord(word, fi1, &eof_l);
+    for (int a = 0; a < layer1_size; a++)
+      fscanf(fi1, "%f", &vec[a]);
+    // Ignore the tailing chars
+    while(!feof(fi)) {
+      ch = fgetc(fi);
+      if(ch == '\n') break;
+    }
+    int idx = SearchVocab(word);
+    if (idx >= 0)
+      memcpy(&(syn1neg[idx * layer1_size]), vec, layer1_size * sizeof(real));
+    cnt++;
+  }
+  fclose(fi2);
 }
 
 // Reads a word and returns its index in the vocabulary
@@ -405,6 +477,7 @@ void InitNet() {
     next_random = next_random * (unsigned long long)25214903917 + 11;
     syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (real)65536) - 0.5) / layer1_size;
   }
+  InitVector();
   CreateBinaryTree();
 }
 
@@ -718,6 +791,10 @@ int main(int argc, char **argv) {
     printf("\t\tSeed for embedding initialization\n");
     printf("\t-checkpoint_interval <int>\n");
     printf("\t\tCheckpoint interval; default is 0\n");
+    printf("\t-init-word <file>\n");
+    printf("\t\tInit word vectors from <file>, not random initialization.\n");
+    printf("\t-init-context <file>\n");
+    printf("\t\tInit context vectors from <file>, not random initialization.\n");
     printf("\nExamples:\n");
     printf("./word2vec -train data.txt -output vec.txt -size 200 -window 5 -sample 1e-4 -negative 5 -hs 0 -binary 0 -cbow 1 -iter 3\n\n");
     return 0;
@@ -729,6 +806,8 @@ int main(int argc, char **argv) {
   if ((i = ArgPos((char *)"-train", argc, argv)) > 0) strcpy(train_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-save-vocab", argc, argv)) > 0) strcpy(save_vocab_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-read-vocab", argc, argv)) > 0) strcpy(read_vocab_file, argv[i + 1]);
+  if ((i = ArgPos((char *)"-init-word", argc, argv)) > 0) strcpy(init_word_file, argv[i + 1]);
+  if ((i = ArgPos((char *)"-init-context", argc, argv)) > 0) strcpy(init_context_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-debug", argc, argv)) > 0) debug_mode = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-binary", argc, argv)) > 0) binary = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-cbow", argc, argv)) > 0) cbow = atoi(argv[i + 1]);
