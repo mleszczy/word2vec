@@ -42,8 +42,13 @@ char init_word_file[MAX_STRING], init_context_file[MAX_STRING];
 struct vocab_word *vocab;
 int binary = 0, cbow = 1, debug_mode = 2, window = 5, min_count = 5, num_threads = 12, min_reduce = 1;
 int *vocab_hash;
+int *freeze_hash;
 long long vocab_max_size = 1000, vocab_size = 0, layer1_size = 100;
 long long train_words = 0, word_count_actual = 0, iter = 5, file_size = 0, classes = 0;
+
+char freeze_vocab[MAX_STRING];
+long long freeze_iter = 0;
+
 real alpha = 0.025, starting_alpha, sample = 1e-3;
 real *syn0, *syn1, *syn1neg, *expTable;
 clock_t start;
@@ -456,6 +461,41 @@ void ReadVocab() {
   fclose(fin);
 }
 
+void InitFreeze() {
+  FILE* fi = fopen(freeze_vocab, "rb");
+  if (fi == NULL) return;
+
+  int n = 0;
+  int ch = 0;
+  while(!feof(fi)) {
+    ch = fgetc(fi);
+    if(ch == '\n') n++;
+  }
+  fclose(fi);
+
+  printf("Total word in freeze vocab: %d\n", n);
+
+  // Load freeze
+  FILE* fi1 = fopen(freeze_vocab, "rb");
+
+  int cnt = 0;
+  while(!feof(fi1) && cnt < n) {
+    char word[MAX_STRING], eof_l = 0;
+    ReadWord(word, fi1, &eof_l);
+
+    // Ignore the tailing chars
+    while(!feof(fi1)) {
+      ch = fgetc(fi1);
+      if(ch == '\n') break;
+    }
+    int idx = SearchVocab(word);
+    if (idx >= 0)
+      freeze_hash[idx] = 1;
+    cnt++;
+  }
+  fclose(fi1);
+}
+
 void InitNet() {
   long long a, b;
   unsigned long long next_random = seed;
@@ -478,6 +518,9 @@ void InitNet() {
     syn0[a * layer1_size + b] = (((next_random & 0xFFFF) / (real)65536) - 0.5) / layer1_size;
   }
   InitVector();
+
+  InitFreeze();
+
   CreateBinaryTree();
 }
 
@@ -596,7 +639,8 @@ void *TrainModelThread(void *id) {
           else if (f < -MAX_EXP) g = (label - 0) * alpha;
           else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
           for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
-          for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * neu1[c];
+          if ((freeze_hash[target] != 1) || (iter - local_iter > freeze_iter))
+            for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * neu1[c];
         }
         // hidden -> in
         for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
@@ -605,7 +649,8 @@ void *TrainModelThread(void *id) {
           if (c >= sentence_length) continue;
           last_word = sen[c];
           if (last_word == -1) continue;
-          for (c = 0; c < layer1_size; c++) syn0[c + last_word * layer1_size] += neu1e[c];
+          if ((freeze_hash[last_word] != 1) || (iter - local_iter > freeze_iter))
+            for (c = 0; c < layer1_size; c++) syn0[c + last_word * layer1_size] += neu1e[c];
         }
       }
     } else {  //train skip-gram
@@ -652,10 +697,12 @@ void *TrainModelThread(void *id) {
           else if (f < -MAX_EXP) g = (label - 0) * alpha;
           else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
           for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
-          for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * syn0[c + l1];
+          if (freeze_hash[target] != 1 || iter - local_iter > freeze_iter)
+            for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * syn0[c + l1];
         }
         // Learn weights input -> hidden
-        for (c = 0; c < layer1_size; c++) syn0[c + l1] += neu1e[c];
+        if (freeze_hash[last_word] != 1 || iter - local_iter > freeze_iter)
+          for (c = 0; c < layer1_size; c++) syn0[c + l1] += neu1e[c];
       }
     }
     sentence_position++;
@@ -795,6 +842,10 @@ int main(int argc, char **argv) {
     printf("\t\tInit word vectors from <file>, not random initialization.\n");
     printf("\t-init-context <file>\n");
     printf("\t\tInit context vectors from <file>, not random initialization.\n");
+    printf("\t-freeze-vocab <file>\n");
+    printf("\t\tFreezen vocab from <file>.\n");
+    printf("\t-freeze-iter <file>\n");
+    printf("\t\tNumber of iteration to freeze vocab.\n");
     printf("\nExamples:\n");
     printf("./word2vec -train data.txt -output vec.txt -size 200 -window 5 -sample 1e-4 -negative 5 -hs 0 -binary 0 -cbow 1 -iter 3\n\n");
     return 0;
@@ -824,8 +875,13 @@ int main(int argc, char **argv) {
   if ((i = ArgPos((char *)"-classes", argc, argv)) > 0) classes = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-seed", argc, argv)) > 0) seed = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-checkpoint_interval", argc, argv)) > 0) checkpoint_interval = atoi(argv[i + 1]);
+
+  if ((i = ArgPos((char *)"-freeze-vocab", argc, argv)) > 0) strcpy(freeze_vocab, argv[i + 1]);
+  if ((i = ArgPos((char *)"-freeze-iter", argc, argv)) > 0) freeze_iter = atoi(argv[i + 1]);
+
   vocab = (struct vocab_word *)calloc(vocab_max_size, sizeof(struct vocab_word));
   vocab_hash = (int *)calloc(vocab_hash_size, sizeof(int));
+  freeze_hash = (int *)calloc(vocab_hash_size, sizeof(int));
   expTable = (real *)malloc((EXP_TABLE_SIZE + 1) * sizeof(real));
   for (i = 0; i < EXP_TABLE_SIZE; i++) {
     expTable[i] = exp((i / (real)EXP_TABLE_SIZE * 2 - 1) * MAX_EXP); // Precompute the exp() table
