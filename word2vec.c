@@ -142,57 +142,60 @@ void InitVector() {
   // Load word vectors
   FILE* fi1 = fopen(init_word_file, "rb");
 
-  // Skips the header of input file
-  while(!feof(fi)) {
-    ch = fgetc(fi);
-    if(ch == '\n') break;
-  }
-  int cnt = 1;
-  while(!feof(fi1) && cnt < n) {
-    char word[MAX_STRING], eof_l = 0;
-    real *vec = (real *)calloc(layer1_size, sizeof(real));
-    ReadWord(word, fi1, &eof_l);
-    for (int a = 0; a < layer1_size; a++)
-      fscanf(fi1, "%f", &vec[a]);
-    // Ignore the tailing chars
-    while(!feof(fi)) {
-      ch = fgetc(fi);
+  if (fi1 != NULL) {
+    // Skips the header of input file
+    while(!feof(fi1)) {
+      ch = fgetc(fi1);
       if(ch == '\n') break;
     }
-    int idx = SearchVocab(word);
-    if (idx >= 0) {
-      memcpy(&(syn0[idx * layer1_size]), vec, layer1_size * sizeof(real));
+    int cnt = 1;
+    while(!feof(fi1) && cnt < n) {
+      char word[MAX_STRING], eof_l = 0;
+      real *vec = (real *)calloc(layer1_size, sizeof(real));
+      ReadWord(word, fi1, &eof_l);
+      for (int a = 0; a < layer1_size; a++)
+        fscanf(fi1, "%f", &vec[a]);
+      // Ignore the tailing chars
+      while(!feof(fi1)) {
+        ch = fgetc(fi1);
+        if(ch == '\n') break;
+      }
+      int idx = SearchVocab(word);
+      if (idx >= 0) {
+        memcpy(&(syn0[idx * layer1_size]), vec, layer1_size * sizeof(real));
+      }
+      cnt++;
     }
-    cnt++;
+    fclose(fi1);
   }
-  fclose(fi1);
 
   // Load context vectors
   FILE* fi2 = fopen(init_context_file, "rb");
-
-  // Skips the header of input file
-  while(!feof(fi)) {
-    ch = fgetc(fi);
-    if(ch == '\n') break;
-  }
-  cnt = 1;
-  while(!feof(fi1) && cnt < n) {
-    char word[MAX_STRING], eof_l = 0;
-    real *vec = (real *)calloc(layer1_size, sizeof(real));
-    ReadWord(word, fi1, &eof_l);
-    for (int a = 0; a < layer1_size; a++)
-      fscanf(fi1, "%f", &vec[a]);
-    // Ignore the tailing chars
-    while(!feof(fi)) {
-      ch = fgetc(fi);
+  if (fi2 != NULL) {
+    // Skips the header of input file
+    while(!feof(fi2)) {
+      ch = fgetc(fi2);
       if(ch == '\n') break;
     }
-    int idx = SearchVocab(word);
-    if (idx >= 0)
-      memcpy(&(syn1neg[idx * layer1_size]), vec, layer1_size * sizeof(real));
-    cnt++;
+    int cnt = 1;
+    while(!feof(fi2) && cnt < n) {
+      char word[MAX_STRING], eof_l = 0;
+      real *vec = (real *)calloc(layer1_size, sizeof(real));
+      ReadWord(word, fi2, &eof_l);
+      for (int a = 0; a < layer1_size; a++)
+        fscanf(fi2, "%f", &vec[a]);
+      // Ignore the tailing chars
+      while(!feof(fi2)) {
+        ch = fgetc(fi2);
+        if(ch == '\n') break;
+      }
+      int idx = SearchVocab(word);
+      if (idx >= 0)
+        memcpy(&(syn1neg[idx * layer1_size]), vec, layer1_size * sizeof(real));
+      cnt++;
+    }
+    fclose(fi2);
   }
-  fclose(fi2);
 }
 
 // Reads a word and returns its index in the vocabulary
