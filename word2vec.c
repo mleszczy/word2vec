@@ -128,7 +128,13 @@ int SearchVocab(char *word) {
 // Reads a single word from a file, assuming space + tab + EOL to be word boundaries
 void InitVector() {
   FILE* fi = fopen(init_word_file, "rb");
-  if (fi == NULL) return;
+  if (fi == NULL) {
+	if (init_word_file[0] != 0) {
+		printf("Init word error\n"); 
+		exit(1); 
+	}
+	return;   
+  }
 
   int n = 0;
   int ch = 0;
@@ -170,6 +176,13 @@ void InitVector() {
 
   // Load context vectors
   FILE* fi2 = fopen(init_context_file, "rb");
+  if (fi2 == NULL){
+	if (init_context_file[0] != 0) {
+      printf("Init context error\n");
+      exit(1);
+  	}
+	return; 
+  }
 
   // Skips the header of input file
   while(!feof(fi)) {
@@ -464,7 +477,13 @@ void ReadVocab() {
 
 void InitFreeze() {
   FILE* fi = fopen(freeze_vocab, "rb");
-  if (fi == NULL) return;
+  if (fi == NULL){
+	if (freeze_vocab[0] != 0){
+      printf("Freeze vocabulary file not found\n");
+      exit(1); 
+    }
+	return; 
+  }
 
   int n = 0;
   int ch = 0;
@@ -864,6 +883,11 @@ int main(int argc, char **argv) {
   output_file[0] = 0;
   save_vocab_file[0] = 0;
   read_vocab_file[0] = 0;
+  init_word_file[0] = 0;
+  init_context_file[0] = 0;
+  read_vocab_file[0] = 0;
+  freeze_vocab[0] = 0; 
+
   if ((i = ArgPos((char *)"-size", argc, argv)) > 0) layer1_size = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-train", argc, argv)) > 0) strcpy(train_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-save-vocab", argc, argv)) > 0) strcpy(save_vocab_file, argv[i + 1]);
@@ -898,6 +922,24 @@ int main(int argc, char **argv) {
     expTable[i] = exp((i / (real)EXP_TABLE_SIZE * 2 - 1) * MAX_EXP); // Precompute the exp() table
     expTable[i] = expTable[i] / (expTable[i] + 1);                   // Precompute f(x) = x / (x + 1)
   }
+  // Log selected options
+  printf("init-word file: %s\n", init_word_file); 
+  printf("init-context file: %s\n", init_context_file); 
+  printf("cbow: %d\n", cbow); 
+  printf("alpha: %lf\n", alpha); 
+  printf("output: %s\n", output_file); 
+  printf("window: %d\n", window); 
+  printf("sample: %lf\n", sample); 
+  printf("hs: %d\n", hs); 
+  printf("negative: %d\n", negative); 
+  printf("threads: %d\n", num_threads); 
+  printf("iter: %d\n", iter); 
+  printf("min-count: %d\n", min_count); 
+  printf("classes: %d\n", classes); 
+  printf("seed: %d\n", seed); 
+  printf("checkpoint_interval: %d\n", checkpoint_interval); 
+  printf("freeze-vocab: %s\n", freeze_vocab); 
+  printf("freeze-iter: %d\n", freeze_iter); 
   TrainModel();
   return 0;
 }
