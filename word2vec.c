@@ -642,7 +642,7 @@ void *TrainModelThread(void *id) {
           else if (f < -MAX_EXP) g = (label - 0) * alpha;
           else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
           for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
-          if ((freeze_hash[target] != 1) || (iter - local_iter > freeze_iter))
+          if ((freeze_hash[target] != 1) || (iter - local_iter >= freeze_iter))
             for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * neu1[c];
         }
         // hidden -> in
@@ -652,7 +652,7 @@ void *TrainModelThread(void *id) {
           if (c >= sentence_length) continue;
           last_word = sen[c];
           if (last_word == -1) continue;
-          if ((freeze_hash[last_word] != 1) || (iter - local_iter > freeze_iter))
+          if ((freeze_hash[last_word] != 1) || (iter - local_iter >= freeze_iter))
             for (c = 0; c < layer1_size; c++) syn0[c + last_word * layer1_size] += neu1e[c];
         }
       }
@@ -700,11 +700,11 @@ void *TrainModelThread(void *id) {
           else if (f < -MAX_EXP) g = (label - 0) * alpha;
           else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
           for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
-          if (freeze_hash[target] != 1 || iter - local_iter > freeze_iter)
+          if (freeze_hash[target] != 1 || iter - local_iter >= freeze_iter)
             for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * syn0[c + l1];
         }
         // Learn weights input -> hidden
-        if (freeze_hash[last_word] != 1 || iter - local_iter > freeze_iter)
+        if (freeze_hash[last_word] != 1 || iter - local_iter >= freeze_iter)
           for (c = 0; c < layer1_size; c++) syn0[c + l1] += neu1e[c];
       }
     }
