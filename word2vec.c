@@ -129,11 +129,11 @@ int SearchVocab(char *word) {
 void InitVector() {
   FILE* fi = fopen(init_word_file, "rb");
   if (fi == NULL) {
-	if (init_word_file[0] != 0) {
-		printf("Init word error\n"); 
-		exit(1); 
-	}
-	return;   
+    if (init_word_file[0] != 0) {
+      printf("Init word error\n");
+      exit(1);
+    }
+    return;
   }
 
   int n = 0;
@@ -150,8 +150,8 @@ void InitVector() {
   FILE* fi1 = fopen(init_word_file, "rb");
 
   // Skips the header of input file
-  while(!feof(fi)) {
-    ch = fgetc(fi);
+  while(!feof(fi1)) {
+    ch = fgetc(fi1);
     if(ch == '\n') break;
   }
   int cnt = 1;
@@ -162,8 +162,8 @@ void InitVector() {
     for (int a = 0; a < layer1_size; a++)
       fscanf(fi1, "%f", &vec[a]);
     // Ignore the tailing chars
-    while(!feof(fi)) {
-      ch = fgetc(fi);
+    while(!feof(fi1)) {
+      ch = fgetc(fi1);
       if(ch == '\n') break;
     }
     int idx = SearchVocab(word);
@@ -176,29 +176,29 @@ void InitVector() {
 
   // Load context vectors
   FILE* fi2 = fopen(init_context_file, "rb");
-  if (fi2 == NULL){
-	if (init_context_file[0] != 0) {
+  if (fi2 == NULL) {
+    if (init_context_file[0] != 0) {
       printf("Init context error\n");
       exit(1);
-  	}
-	return; 
+    }
+    return;
   }
 
   // Skips the header of input file
-  while(!feof(fi)) {
-    ch = fgetc(fi);
+  while(!feof(fi2)) {
+    ch = fgetc(fi2);
     if(ch == '\n') break;
   }
   cnt = 1;
-  while(!feof(fi1) && cnt < n) {
+  while(!feof(fi2) && cnt < n) {
     char word[MAX_STRING], eof_l = 0;
     real *vec = (real *)calloc(layer1_size, sizeof(real));
-    ReadWord(word, fi1, &eof_l);
+    ReadWord(word, fi2, &eof_l);
     for (int a = 0; a < layer1_size; a++)
-      fscanf(fi1, "%f", &vec[a]);
+      fscanf(fi2, "%f", &vec[a]);
     // Ignore the tailing chars
-    while(!feof(fi)) {
-      ch = fgetc(fi);
+    while(!feof(fi2)) {
+      ch = fgetc(fi2);
       if(ch == '\n') break;
     }
     int idx = SearchVocab(word);
@@ -208,6 +208,7 @@ void InitVector() {
   }
   fclose(fi2);
 }
+
 
 // Reads a word and returns its index in the vocabulary
 int ReadWordIndex(FILE *fin, char *eof) {
@@ -660,7 +661,7 @@ void *TrainModelThread(void *id) {
           else if (f < -MAX_EXP) g = (label - 0) * alpha;
           else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
           for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
-          if ((freeze_hash[target] != 1) || (iter - local_iter > freeze_iter))
+          if ((freeze_hash[target] != 1) || (iter - local_iter >= freeze_iter))
             for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * neu1[c];
         }
         // hidden -> in
@@ -670,7 +671,7 @@ void *TrainModelThread(void *id) {
           if (c >= sentence_length) continue;
           last_word = sen[c];
           if (last_word == -1) continue;
-          if ((freeze_hash[last_word] != 1) || (iter - local_iter > freeze_iter))
+          if ((freeze_hash[last_word] != 1) || (iter - local_iter >= freeze_iter))
             for (c = 0; c < layer1_size; c++) syn0[c + last_word * layer1_size] += neu1e[c];
         }
       }
@@ -718,11 +719,11 @@ void *TrainModelThread(void *id) {
           else if (f < -MAX_EXP) g = (label - 0) * alpha;
           else g = (label - expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))]) * alpha;
           for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
-          if (freeze_hash[target] != 1 || iter - local_iter > freeze_iter)
+          if (freeze_hash[target] != 1 || iter - local_iter >= freeze_iter)
             for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * syn0[c + l1];
         }
         // Learn weights input -> hidden
-        if (freeze_hash[last_word] != 1 || iter - local_iter > freeze_iter)
+        if (freeze_hash[last_word] != 1 || iter - local_iter >= freeze_iter)
           for (c = 0; c < layer1_size; c++) syn0[c + l1] += neu1e[c];
       }
     }
