@@ -17,6 +17,7 @@
 #include <string.h>
 #include <math.h>
 #include <pthread.h>
+#include <time.h>
 
 #define MAX_STRING 10000
 #define EXP_TABLE_SIZE 1000
@@ -127,7 +128,13 @@ int SearchVocab(char *word) {
 // Reads a single word from a file, assuming space + tab + EOL to be word boundaries
 void InitVector() {
   FILE* fi = fopen(init_word_file, "rb");
-  if (fi == NULL) return;
+  if (fi == NULL) {
+    if (init_word_file[0] != 0) {
+      printf("Init word error\n");
+      exit(1);
+    }
+    return;
+  }
 
   int n = 0;
   int ch = 0;
@@ -142,61 +149,66 @@ void InitVector() {
   // Load word vectors
   FILE* fi1 = fopen(init_word_file, "rb");
 
-  if (fi1 != NULL) {
-    // Skips the header of input file
+  // Skips the header of input file
+  while(!feof(fi1)) {
+    ch = fgetc(fi1);
+    if(ch == '\n') break;
+  }
+  int cnt = 1;
+  while(!feof(fi1) && cnt < n) {
+    char word[MAX_STRING], eof_l = 0;
+    real *vec = (real *)calloc(layer1_size, sizeof(real));
+    ReadWord(word, fi1, &eof_l);
+    for (int a = 0; a < layer1_size; a++)
+      fscanf(fi1, "%f", &vec[a]);
+    // Ignore the tailing chars
     while(!feof(fi1)) {
       ch = fgetc(fi1);
       if(ch == '\n') break;
     }
-    int cnt = 1;
-    while(!feof(fi1) && cnt < n) {
-      char word[MAX_STRING], eof_l = 0;
-      real *vec = (real *)calloc(layer1_size, sizeof(real));
-      ReadWord(word, fi1, &eof_l);
-      for (int a = 0; a < layer1_size; a++)
-        fscanf(fi1, "%f", &vec[a]);
-      // Ignore the tailing chars
-      while(!feof(fi1)) {
-        ch = fgetc(fi1);
-        if(ch == '\n') break;
-      }
-      int idx = SearchVocab(word);
-      if (idx >= 0) {
-        memcpy(&(syn0[idx * layer1_size]), vec, layer1_size * sizeof(real));
-      }
-      cnt++;
+    int idx = SearchVocab(word);
+    if (idx >= 0) {
+      memcpy(&(syn0[idx * layer1_size]), vec, layer1_size * sizeof(real));
     }
-    fclose(fi1);
+    cnt++;
   }
+  fclose(fi1);
 
   // Load context vectors
   FILE* fi2 = fopen(init_context_file, "rb");
-  if (fi2 != NULL) {
-    // Skips the header of input file
+  if (fi2 == NULL) {
+    if (init_context_file[0] != 0) {
+      printf("Init context error\n");
+      exit(1);
+    }
+    return;
+  }
+
+  // Skips the header of input file
+  while(!feof(fi2)) {
+    ch = fgetc(fi2);
+    if(ch == '\n') break;
+  }
+  cnt = 1;
+  while(!feof(fi2) && cnt < n) {
+    char word[MAX_STRING], eof_l = 0;
+    real *vec = (real *)calloc(layer1_size, sizeof(real));
+    ReadWord(word, fi2, &eof_l);
+    for (int a = 0; a < layer1_size; a++)
+      fscanf(fi2, "%f", &vec[a]);
+    // Ignore the tailing chars
     while(!feof(fi2)) {
       ch = fgetc(fi2);
       if(ch == '\n') break;
     }
-    int cnt = 1;
-    while(!feof(fi2) && cnt < n) {
-      char word[MAX_STRING], eof_l = 0;
-      real *vec = (real *)calloc(layer1_size, sizeof(real));
-      ReadWord(word, fi2, &eof_l);
-      for (int a = 0; a < layer1_size; a++)
-        fscanf(fi2, "%f", &vec[a]);
-      // Ignore the tailing chars
-      while(!feof(fi2)) {
-        ch = fgetc(fi2);
-        if(ch == '\n') break;
-      }
-      int idx = SearchVocab(word);
-      if (idx >= 0)
-        memcpy(&(syn1neg[idx * layer1_size]), vec, layer1_size * sizeof(real));
-      cnt++;
-    }
-    fclose(fi2);
+    int idx = SearchVocab(word);
+    if (idx >= 0)
+      memcpy(&(syn1neg[idx * layer1_size]), vec, layer1_size * sizeof(real));
+    cnt++;
   }
+  fclose(fi2);
 }
+
 
 // Reads a word and returns its index in the vocabulary
 int ReadWordIndex(FILE *fin, char *eof) {
@@ -466,7 +478,13 @@ void ReadVocab() {
 
 void InitFreeze() {
   FILE* fi = fopen(freeze_vocab, "rb");
-  if (fi == NULL) return;
+  if (fi == NULL){
+	if (freeze_vocab[0] != 0){
+      printf("Freeze vocabulary file not found\n");
+      exit(1); 
+    }
+	return; 
+  }
 
   int n = 0;
   int ch = 0;
@@ -586,6 +604,7 @@ void *TrainModelThread(void *id) {
       last_word_count = 0;
       sentence_length = 0;
       fseek(fi, file_size / (long long)num_threads * (long long)id, SEEK_SET);
+      eof = 0; 
       continue;
     }
     word = sen[sentence_position];
@@ -732,8 +751,17 @@ void TrainModel() {
   InitNet();
   if (negative > 0) InitUnigramTable();
   start = clock();
+
+  struct timespec start, finish;
+  double elapsed;
+  clock_gettime(CLOCK_MONOTONIC, &start);
   for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
   for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
+  clock_gettime(CLOCK_MONOTONIC, &finish);
+  elapsed = (finish.tv_sec - start.tv_sec);
+  elapsed += (finish.tv_nsec - start.tv_nsec) / 1000000000.0;
+  printf("Average epoch time: %lfs\n", elapsed / iter);
+
   if (classes == 0) {
     SaveVectors(iter);
   } else {
@@ -856,6 +884,11 @@ int main(int argc, char **argv) {
   output_file[0] = 0;
   save_vocab_file[0] = 0;
   read_vocab_file[0] = 0;
+  init_word_file[0] = 0;
+  init_context_file[0] = 0;
+  read_vocab_file[0] = 0;
+  freeze_vocab[0] = 0; 
+
   if ((i = ArgPos((char *)"-size", argc, argv)) > 0) layer1_size = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-train", argc, argv)) > 0) strcpy(train_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-save-vocab", argc, argv)) > 0) strcpy(save_vocab_file, argv[i + 1]);
@@ -890,6 +923,24 @@ int main(int argc, char **argv) {
     expTable[i] = exp((i / (real)EXP_TABLE_SIZE * 2 - 1) * MAX_EXP); // Precompute the exp() table
     expTable[i] = expTable[i] / (expTable[i] + 1);                   // Precompute f(x) = x / (x + 1)
   }
+  // Log selected options
+  printf("init-word file: %s\n", init_word_file); 
+  printf("init-context file: %s\n", init_context_file); 
+  printf("cbow: %d\n", cbow); 
+  printf("alpha: %lf\n", alpha); 
+  printf("output: %s\n", output_file); 
+  printf("window: %d\n", window); 
+  printf("sample: %lf\n", sample); 
+  printf("hs: %d\n", hs); 
+  printf("negative: %d\n", negative); 
+  printf("threads: %d\n", num_threads); 
+  printf("iter: %d\n", iter); 
+  printf("min-count: %d\n", min_count); 
+  printf("classes: %d\n", classes); 
+  printf("seed: %d\n", seed); 
+  printf("checkpoint_interval: %d\n", checkpoint_interval); 
+  printf("freeze-vocab: %s\n", freeze_vocab); 
+  printf("freeze-iter: %d\n", freeze_iter); 
   TrainModel();
   return 0;
 }
