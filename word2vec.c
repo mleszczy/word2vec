@@ -51,7 +51,7 @@ char freeze_vocab[MAX_STRING];
 long long freeze_iter = 0;
 
 real alpha = 0.025, starting_alpha, sample = 1e-3;
-real *syn0, *syn1, *syn1neg, *expTable;
+real *syn0, *syn1, *syn1neg, *expTable, *logTable;
 clock_t start;
 int seed;
 int checkpoint_interval = 0;
@@ -555,6 +555,9 @@ void *TrainModelThread(void *id) {
   clock_t now;
   real *neu1 = (real *)calloc(layer1_size, sizeof(real));
   real *neu1e = (real *)calloc(layer1_size, sizeof(real));
+
+  real loss = 0.0;
+
   FILE *fi = fopen(train_file, "rb");
   fseek(fi, file_size / (long long)num_threads * (long long)id, SEEK_SET);
   while (1 && iter > 0) {
@@ -593,6 +596,9 @@ void *TrainModelThread(void *id) {
     if (eof || (word_count > train_words / num_threads)) {
       word_count_actual += word_count - last_word_count;
       local_iter--;
+      if (id == 0)
+        printf("Loss: %f\n", loss);
+      loss = 0.0;
       if (local_iter == 0) break;
       if (((iter - local_iter) - last_checkpoint) == checkpoint_interval
         && (checkpoint_interval > 0)
@@ -627,21 +633,21 @@ void *TrainModelThread(void *id) {
       }
       if (cw) {
         for (c = 0; c < layer1_size; c++) neu1[c] /= cw;
-        if (hs) for (d = 0; d < vocab[word].codelen; d++) {
-          f = 0;
-          l2 = vocab[word].point[d] * layer1_size;
-          // Propagate hidden -> output
-          for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1[c + l2];
-          if (f <= -MAX_EXP) continue;
-          else if (f >= MAX_EXP) continue;
-          else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
-          // 'g' is the gradient multiplied by the learning rate
-          g = (1 - vocab[word].code[d] - f) * alpha;
-          // Propagate errors output -> hidden
-          for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
-          // Learn weights hidden -> output
-          for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * neu1[c];
-        }
+        // if (hs) for (d = 0; d < vocab[word].codelen; d++) {
+        //   f = 0;
+        //   l2 = vocab[word].point[d] * layer1_size;
+        //   // Propagate hidden -> output
+        //   for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1[c + l2];
+        //   if (f <= -MAX_EXP) continue;
+        //   else if (f >= MAX_EXP) continue;
+        //   else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
+        //   // 'g' is the gradient multiplied by the learning rate
+        //   g = (1 - vocab[word].code[d] - f) * alpha;
+        //   // Propagate errors output -> hidden
+        //   for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
+        //   // Learn weights hidden -> output
+        //   for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * neu1[c];
+        // }
         // NEGATIVE SAMPLING
         if (negative > 0) for (d = 0; d < negative + 1; d++) {
           if (d == 0) {
@@ -663,6 +669,13 @@ void *TrainModelThread(void *id) {
           for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
           if ((freeze_hash[target] != 1) || (iter - local_iter >= freeze_iter))
             for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * neu1[c];
+
+          // Calc loss
+          real lprob = f;
+          if (d != 0) lprob = -lprob;
+          if (lprob <= MAX_EXP && lprob >= -MAX_EXP) {
+            loss -= logTable[(int)((lprob + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
+          }
         }
         // hidden -> in
         for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
@@ -684,22 +697,22 @@ void *TrainModelThread(void *id) {
         if (last_word == -1) continue;
         l1 = last_word * layer1_size;
         for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
-        // HIERARCHICAL SOFTMAX
-        if (hs) for (d = 0; d < vocab[word].codelen; d++) {
-          f = 0;
-          l2 = vocab[word].point[d] * layer1_size;
-          // Propagate hidden -> output
-          for (c = 0; c < layer1_size; c++) f += syn0[c + l1] * syn1[c + l2];
-          if (f <= -MAX_EXP) continue;
-          else if (f >= MAX_EXP) continue;
-          else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
-          // 'g' is the gradient multiplied by the learning rate
-          g = (1 - vocab[word].code[d] - f) * alpha;
-          // Propagate errors output -> hidden
-          for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
-          // Learn weights hidden -> output
-          for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * syn0[c + l1];
-        }
+        // // HIERARCHICAL SOFTMAX
+        // if (hs) for (d = 0; d < vocab[word].codelen; d++) {
+        //   f = 0;
+        //   l2 = vocab[word].point[d] * layer1_size;
+        //   // Propagate hidden -> output
+        //   for (c = 0; c < layer1_size; c++) f += syn0[c + l1] * syn1[c + l2];
+        //   if (f <= -MAX_EXP) continue;
+        //   else if (f >= MAX_EXP) continue;
+        //   else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
+        //   // 'g' is the gradient multiplied by the learning rate
+        //   g = (1 - vocab[word].code[d] - f) * alpha;
+        //   // Propagate errors output -> hidden
+        //   for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1[c + l2];
+        //   // Learn weights hidden -> output
+        //   for (c = 0; c < layer1_size; c++) syn1[c + l2] += g * syn0[c + l1];
+        // }
         // NEGATIVE SAMPLING
         if (negative > 0) for (d = 0; d < negative + 1; d++) {
           if (d == 0) {
@@ -721,6 +734,13 @@ void *TrainModelThread(void *id) {
           for (c = 0; c < layer1_size; c++) neu1e[c] += g * syn1neg[c + l2];
           if (freeze_hash[target] != 1 || iter - local_iter >= freeze_iter)
             for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * syn0[c + l1];
+
+          // Calc loss
+          real lprob = f;
+          if (d != 0) lprob = -lprob;
+          if (lprob <= MAX_EXP && lprob >= -MAX_EXP) {
+            loss -= logTable[(int)((lprob + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
+          }
         }
         // Learn weights input -> hidden
         if (freeze_hash[last_word] != 1 || iter - local_iter >= freeze_iter)
@@ -919,9 +939,11 @@ int main(int argc, char **argv) {
   vocab_hash = (int *)calloc(vocab_hash_size, sizeof(int));
   freeze_hash = (int *)calloc(vocab_hash_size, sizeof(int));
   expTable = (real *)malloc((EXP_TABLE_SIZE + 1) * sizeof(real));
+  logTable = (real *)malloc((EXP_TABLE_SIZE + 1) * sizeof(real));
   for (i = 0; i < EXP_TABLE_SIZE; i++) {
     expTable[i] = exp((i / (real)EXP_TABLE_SIZE * 2 - 1) * MAX_EXP); // Precompute the exp() table
     expTable[i] = expTable[i] / (expTable[i] + 1);                   // Precompute f(x) = x / (x + 1)
+    logTable[i] = log(expTable[i]);
   }
   // Log selected options
   printf("init-word file: %s\n", init_word_file); 
